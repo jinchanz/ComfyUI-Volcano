@@ -2,12 +2,27 @@
 
 import base64
 import io
-import json
 import os
+import requests
 from volcengine.visual.VisualService import VisualService
 from PIL import Image
 import numpy as np
 import torch
+
+
+def create_visual_service_with_timeout(timeout=120):
+    """创建带超时设置的VisualService实例"""
+    visual_service = VisualService()
+    
+    # 尝试设置超时时间
+    try:
+        visual_service.set_connection_timeout(timeout)
+        visual_service.set_socket_timeout(timeout)
+            
+    except Exception as e:
+        print(f"警告：无法设置火山引擎SDK超时时间: {e}")
+        
+    return visual_service
 
 
 
@@ -28,6 +43,7 @@ class MaletteVolcanoT2IAPI:
             "optional": {
                 "api_key": ("STRING", {"default": "", "placeholder": "火山引擎 API Key"}),
                 "secret_key": ("STRING", {"default": "", "placeholder": "火山引擎 Secret Key"}),
+                "timeout": ("INT", {"default": 120, "min": 30, "max": 600, "step": 10}),
             }
         }
     
@@ -36,10 +52,10 @@ class MaletteVolcanoT2IAPI:
     FUNCTION = "generate_image"
     CATEGORY = "image generation"
     
-    def generate_image(self, prompt, width, height, seed, req_key, num_images, api_key="", secret_key=""):
+    def generate_image(self, prompt, width, height, seed, req_key, num_images, api_key="", secret_key="", timeout=120):
         try:
             # 初始化火山引擎服务
-            visual_service = VisualService()
+            visual_service = create_visual_service_with_timeout(timeout)
             
             # 设置 API 密钥（优先使用输入参数，否则使用环境变量或默认值）
             if api_key and secret_key:
@@ -63,7 +79,7 @@ class MaletteVolcanoT2IAPI:
             def generate_single_image(image_index):
                 try:
                     # 为每个线程创建独立的 VisualService 实例
-                    thread_visual_service = VisualService()
+                    thread_visual_service = create_visual_service_with_timeout(timeout)
                     
                     # 设置 API 密钥
                     if api_key and secret_key:
@@ -188,6 +204,7 @@ class MaletteVolcanoI2IAPI:
             "optional": {
                 "api_key": ("STRING", {"default": "", "placeholder": "火山引擎 API Key"}),
                 "secret_key": ("STRING", {"default": "", "placeholder": "火山引擎 Secret Key"}),
+                "timeout": ("INT", {"default": 120, "min": 30, "max": 600, "step": 10}),
             }
         }
     
@@ -196,10 +213,10 @@ class MaletteVolcanoI2IAPI:
     FUNCTION = "generate_i2i"
     CATEGORY = "image generation"
     
-    def generate_i2i(self, image, prompt, scale, seed, req_key, num_images, api_key="", secret_key=""):
+    def generate_i2i(self, image, prompt, scale, seed, req_key, num_images, api_key="", secret_key="", timeout=120):
         try:
             # 初始化火山引擎服务
-            visual_service = VisualService()
+            visual_service = create_visual_service_with_timeout(timeout)
             
             # 设置 API 密钥（优先使用输入参数，否则使用环境变量或默认值）
             if api_key and secret_key:
@@ -243,7 +260,7 @@ class MaletteVolcanoI2IAPI:
             def generate_single_i2i(image_index):
                 try:
                     # 为每个线程创建独立的 VisualService 实例
-                    thread_visual_service = VisualService()
+                    thread_visual_service = create_visual_service_with_timeout(timeout)
                     
                     # 设置 API 密钥
                     if api_key and secret_key:
@@ -292,7 +309,6 @@ class MaletteVolcanoI2IAPI:
                     # 获取图像数据（优先检查 image_urls，然后是 binary_data_base64）
                     if 'image_urls' in resp_data and resp_data['image_urls']:
                         # 如果有 URL，下载图像
-                        import requests
                         image_url = resp_data['image_urls'][0]
                         response = requests.get(image_url)
                         if response.status_code == 200:
@@ -394,6 +410,7 @@ class MaletteVolcanoSmartAPI:
                 "i2i_req_key": ("STRING", {"default": "jimeng_i2i_v30", "options": ["jimeng_i2i_v30"]}),
                 "api_key": ("STRING", {"default": "", "placeholder": "火山引擎 API Key"}),
                 "secret_key": ("STRING", {"default": "", "placeholder": "火山引擎 Secret Key"}),
+                "timeout": ("INT", {"default": 120, "min": 30, "max": 600, "step": 10}),
             }
         }
     
@@ -404,28 +421,28 @@ class MaletteVolcanoSmartAPI:
     
     def smart_generate(self, prompt, width, height, seed, num_images, image_url="", scale=0.5, 
                       t2i_req_key="jimeng_t2i_v31", i2i_req_key="jimeng_i2i_v30", 
-                      api_key="", secret_key=""):
+                      api_key="", secret_key="", timeout=120):
         try:
             # 检查是否有图片URL
             if image_url and image_url.strip():
                 # 有URL，使用I2I模式
                 return self._generate_i2i_from_url(prompt, width, height, seed, num_images, 
-                                                 image_url, scale, i2i_req_key, api_key, secret_key)
+                                                 image_url, scale, i2i_req_key, api_key, secret_key, timeout)
             else:
                 # 没有URL，使用T2I模式
                 return self._generate_t2i(prompt, width, height, seed, num_images, 
-                                        t2i_req_key, api_key, secret_key)
+                                        t2i_req_key, api_key, secret_key, timeout)
                 
         except Exception as e:
             error_msg = f"智能生成失败: {str(e)}"
             print(error_msg)
             raise Exception(error_msg)
     
-    def _generate_t2i(self, prompt, width, height, seed, num_images, req_key, api_key, secret_key):
+    def _generate_t2i(self, prompt, width, height, seed, num_images, req_key, api_key, secret_key, timeout=120):
         """T2I 生成方法"""
         try:
             # 初始化火山引擎服务
-            visual_service = VisualService()
+            visual_service = create_visual_service_with_timeout(timeout)
             
             # 设置 API 密钥
             if api_key and secret_key:
@@ -448,7 +465,7 @@ class MaletteVolcanoSmartAPI:
             def generate_single_t2i(image_index):
                 try:
                     # 为每个线程创建独立的 VisualService 实例
-                    thread_visual_service = VisualService()
+                    thread_visual_service = create_visual_service_with_timeout(timeout)
                     
                     # 设置 API 密钥
                     if api_key and secret_key:
@@ -548,12 +565,12 @@ class MaletteVolcanoSmartAPI:
         except Exception as e:
             raise Exception(f"T2I 生成失败: {str(e)}")
     
-    def _generate_i2i_from_url(self, prompt, width, height, seed, num_images, image_url, scale, req_key, api_key, secret_key):
+    def _generate_i2i_from_url(self, prompt, width, height, seed, num_images, image_url, scale, req_key, api_key, secret_key, timeout=120):
         """从URL进行I2I生成"""
         try:
-            # 下载图片
-            import requests
-            response = requests.get(image_url, timeout=30)
+            # 下载图片一次，转换为base64
+            print(f"正在下载图片: {image_url}")
+            response = requests.get(image_url, timeout=timeout)
             if response.status_code != 200:
                 raise Exception(f"下载图片失败: HTTP {response.status_code}")
             
@@ -568,8 +585,15 @@ class MaletteVolcanoSmartAPI:
             if pil_image.size != (width, height):
                 pil_image = pil_image.resize((width, height), Image.Resampling.LANCZOS)
             
+            # 将图像转换为 base64（只转换一次）
+            buffer = io.BytesIO()
+            pil_image.save(buffer, format='PNG')
+            image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            
+            print("图片下载完成，开始生成...")
+            
             # 初始化火山引擎服务
-            visual_service = VisualService()
+            visual_service = create_visual_service_with_timeout(timeout)
             
             # 设置 API 密钥
             if api_key and secret_key:
@@ -592,7 +616,7 @@ class MaletteVolcanoSmartAPI:
             def generate_single_i2i_from_url(image_index):
                 try:
                     # 为每个线程创建独立的 VisualService 实例
-                    thread_visual_service = VisualService()
+                    thread_visual_service = create_visual_service_with_timeout(timeout)
                     
                     # 设置 API 密钥
                     if api_key and secret_key:
@@ -610,18 +634,13 @@ class MaletteVolcanoSmartAPI:
                     # 为每张图片生成不同的种子
                     current_seed = seed if seed != -1 else int(time.time() * 1000) + image_index
                     
-                    # 将图像转换为 base64
-                    buffer = io.BytesIO()
-                    pil_image.save(buffer, format='PNG')
-                    image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-                    
-                    # 构建请求参数
+                    # 构建请求参数 - 使用已下载的base64数据
                     form = {
                         "req_key": req_key,
                         "prompt": prompt,
                         "seed": current_seed,
                         "scale": scale,
-                        "binary_data_base64": [image_base64]
+                        "binary_data_base64": [image_base64]  # 使用已转换的base64，不重复下载
                     }
                     
                     # 调用火山引擎 API
@@ -641,7 +660,7 @@ class MaletteVolcanoSmartAPI:
                     if 'image_urls' in resp_data and resp_data['image_urls']:
                         # 如果有 URL，下载图像
                         result_image_url = resp_data['image_urls'][0]
-                        result_response = requests.get(result_image_url, timeout=30)
+                        result_response = requests.get(result_image_url, timeout=timeout)
                         if result_response.status_code == 200:
                             image_data = result_response.content
                         else:
