@@ -56,7 +56,7 @@ class MaletteVolcanoT2IAPI:
         try:
             # 初始化火山引擎服务
             visual_service = create_visual_service_with_timeout(timeout)
-            
+
             # 设置 API 密钥（优先使用输入参数，否则使用环境变量或默认值）
             if api_key and secret_key:
                 visual_service.set_ak(api_key)
@@ -456,7 +456,7 @@ class MaletteVolcanoSmartAPI:
                     visual_service.set_sk(env_sk)
                 else:
                     raise Exception("火山引擎 API Key 或 Secret Key 未设置")
-            
+
             # 并行生成多张图片
             all_images = []
             import concurrent.futures
@@ -510,7 +510,7 @@ class MaletteVolcanoSmartAPI:
                         raise Exception("响应中未找到图像数据")
                     
                     binary_data_base64 = resp_data['binary_data_base64'][0]
-                    
+
                     # 解码并创建图像
                     image_data = base64.b64decode(binary_data_base64)
                     pil_image = Image.open(io.BytesIO(image_data))
@@ -584,7 +584,10 @@ class MaletteVolcanoSmartAPI:
             # 调整图像尺寸以匹配目标尺寸
             if pil_image.size != (width, height):
                 pil_image = pil_image.resize((width, height), Image.Resampling.LANCZOS)
+                print(f"调整图像尺寸: {pil_image.size}")
             
+            img_width, img_height = pil_image.size
+            print(f"图像尺寸: {img_width}x{img_height}")
             # 将图像转换为 base64（只转换一次）
             buffer = io.BytesIO()
             pil_image.save(buffer, format='PNG')
@@ -638,6 +641,8 @@ class MaletteVolcanoSmartAPI:
                     form = {
                         "req_key": req_key,
                         "prompt": prompt,
+                        "width": img_width,
+                        "height": img_height,
                         "seed": current_seed,
                         "scale": scale,
                         "binary_data_base64": [image_base64]  # 使用已转换的base64，不重复下载
