@@ -97,6 +97,8 @@ class MaletteVolcanoT2IAPI:
                     
                     # 为每张图片生成不同的种子
                     current_seed = seed if seed != -1 else int(time.time() * 1000) + image_index
+                    if current_seed > 99999999:
+                        current_seed = current_seed % 99999999
                     
                     # 构建请求参数
                     form = {
@@ -278,6 +280,8 @@ class MaletteVolcanoI2IAPI:
                     
                     # 为每张图片生成不同的种子
                     current_seed = seed if seed != -1 else int(time.time() * 1000) + image_index
+                    if current_seed > 99999999:
+                        current_seed = current_seed % 99999999
                     
                     # 将图像转换为 base64
                     buffer = io.BytesIO()
@@ -482,6 +486,8 @@ class MaletteVolcanoSmartAPI:
                     
                     # 为每张图片生成不同的种子
                     current_seed = seed if seed != -1 else int(time.time() * 1000) + image_index
+                    if current_seed > 99999999:
+                        current_seed = current_seed % 99999999
                     
                     # 构建请求参数
                     form = {
@@ -636,7 +642,8 @@ class MaletteVolcanoSmartAPI:
                     
                     # 为每张图片生成不同的种子
                     current_seed = seed if seed != -1 else int(time.time() * 1000) + image_index
-                    
+                    if current_seed > 99999999:
+                        current_seed = current_seed % 99999999
                     # 构建请求参数 - 使用已下载的base64数据
                     form = {
                         "req_key": req_key,
