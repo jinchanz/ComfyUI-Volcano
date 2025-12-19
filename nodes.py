@@ -34,8 +34,8 @@ class MaletteVolcanoT2IAPI:
         return {
             "required": {
                 "prompt": ("STRING", {"default": "一只可爱的小猫", "multiline": True}),
-                "width": ("INT", {"default": 1024, "min": 512, "max": 2048, "step": 64}),
-                "height": ("INT", {"default": 1024, "min": 512, "max": 2048, "step": 64}),
+                "width": ("INT", {"default": 1024, "min": 512, "max": 4096, "step": 64}),
+                "height": ("INT", {"default": 1024, "min": 512, "max": 4096, "step": 64}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xffffffffffffffff}),
                 "req_key": ("STRING", {"default": "jimeng_t2i_v31", "options": ["jimeng_t2i_v31", "jimeng_t2i_v30"]}),
                 "num_images": ("INT", {"default": 1, "min": 1, "max": 8, "step": 1}),
@@ -402,8 +402,8 @@ class MaletteVolcanoSmartAPI:
         return {
             "required": {
                 "prompt": ("STRING", {"default": "一只可爱的小猫", "multiline": True}),
-                "width": ("INT", {"default": 1024, "min": 512, "max": 2048, "step": 64}),
-                "height": ("INT", {"default": 1024, "min": 512, "max": 2048, "step": 64}),
+                "width": ("INT", {"default": 1024, "min": 512, "max": 4096, "step": 64}),
+                "height": ("INT", {"default": 1024, "min": 512, "max": 4096, "step": 64}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xffffffffffffffff}),
                 "num_images": ("INT", {"default": 1, "min": 1, "max": 8, "step": 1}),
             },
