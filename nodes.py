@@ -738,15 +738,419 @@ class MaletteVolcanoSmartAPI:
             raise Exception(f"I2I 生成失败: {str(e)}")
 
 
+class MaletteVolcanoAsyncSmartAPI:
+    """火山引擎异步智能图像生成节点 - 使用提交任务+轮询结果的方式"""
+    
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "prompt": ("STRING", {"default": "一只可爱的小猫", "multiline": True}),
+                "width": ("INT", {"default": 1024, "min": 512, "max": 4096, "step": 64}),
+                "height": ("INT", {"default": 1024, "min": 512, "max": 4096, "step": 64}),
+                "seed": ("INT", {"default": -1, "min": -1, "max": 0xffffffffffffffff}),
+                "num_images": ("INT", {"default": 1, "min": 1, "max": 8, "step": 1}),
+            },
+            "optional": {
+                "image": ("IMAGE",),
+                "image_url": ("STRING", {"default": "", "placeholder": "图片URL（留空则使用T2I，有URL或IMAGE则使用I2I）"}),
+                "scale": ("FLOAT", {"default": 0.5, "min": 0.1, "max": 1.0, "step": 0.1}),
+                "t2i_req_key": ("STRING", {"default": "jimeng_t2i_v31", "options": ["jimeng_t2i_v31", "jimeng_t2i_v30"]}),
+                "i2i_req_key": ("STRING", {"default": "jimeng_i2i_v30", "options": ["jimeng_i2i_v30"]}),
+                "api_key": ("STRING", {"default": "", "placeholder": "火山引擎 API Key"}),
+                "secret_key": ("STRING", {"default": "", "placeholder": "火山引擎 Secret Key"}),
+                "timeout": ("INT", {"default": 300, "min": 60, "max": 1800, "step": 30}),
+                "poll_interval": ("INT", {"default": 3, "min": 1, "max": 10, "step": 1}),
+            }
+        }
+    
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("image", "info")
+    FUNCTION = "async_smart_generate"
+    CATEGORY = "image generation"
+    
+    def async_smart_generate(self, prompt, width, height, seed, num_images, image=None, image_url="", scale=0.5, 
+                           t2i_req_key="jimeng_t2i_v31", i2i_req_key="jimeng_i2i_v30", 
+                           api_key="", secret_key="", timeout=300, poll_interval=3):
+        try:
+            # 检查是否有图片输入（优先检查IMAGE，然后是URL）
+            use_i2i = False
+            input_image = None
+            
+            if image is not None:
+                # 有IMAGE输入，使用I2I模式
+                use_i2i = True
+                input_image = image
+            elif image_url and image_url.strip():
+                # 有URL，使用I2I模式
+                use_i2i = True
+                input_image = image_url
+            
+            if use_i2i:
+                return self._async_generate_i2i(prompt, width, height, seed, num_images, 
+                                              input_image, scale, i2i_req_key, api_key, secret_key, timeout, poll_interval)
+            else:
+                return self._async_generate_t2i(prompt, width, height, seed, num_images, 
+                                              t2i_req_key, api_key, secret_key, timeout, poll_interval)
+                
+        except Exception as e:
+            error_msg = f"异步智能生成失败: {str(e)}"
+            print(error_msg)
+            raise Exception(error_msg)
+    
+    def _setup_visual_service(self, api_key, secret_key, timeout):
+        """设置并返回VisualService实例"""
+        visual_service = create_visual_service_with_timeout(timeout)
+        
+        if api_key and secret_key:
+            visual_service.set_ak(api_key)
+            visual_service.set_sk(secret_key)
+        else:
+            env_ak = os.getenv('VOLC_AK')
+            env_sk = os.getenv('VOLC_SK')
+            if env_ak and env_sk:
+                visual_service.set_ak(env_ak)
+                visual_service.set_sk(env_sk)
+            else:
+                raise Exception("火山引擎 API Key 或 Secret Key 未设置")
+        
+        return visual_service
+    
+    def _submit_task(self, visual_service, form):
+        """提交异步任务"""
+        resp = visual_service.cv_sync2async_submit_task(form)
+
+        print(f"提交任务响应: {resp}")
+        
+        if not resp or 'data' not in resp:
+            raise Exception(f"提交任务失败: {resp}")
+        
+        resp_data = resp['data']
+        
+        # 检查是否有错误
+        if 'error' in resp_data:
+            raise Exception(f"提交任务错误: {resp_data['error']}")
+        
+        # 获取task_id
+        if 'task_id' not in resp_data:
+            raise Exception("响应中未找到task_id")
+        
+        task_id = resp_data['task_id']
+        return task_id
+    
+    def _poll_result(self, visual_service, req_key, task_id, timeout, poll_interval):
+        """轮询任务结果"""
+        import time
+        
+        start_time = time.time()
+        max_wait_time = timeout
+        
+        while True:
+            # 检查超时
+            elapsed_time = time.time() - start_time
+            if elapsed_time > max_wait_time:
+                raise Exception(f"轮询超时: 超过 {max_wait_time} 秒")
+            
+            # 构建查询请求
+            form = {
+                "req_key": req_key,
+                "task_id": task_id
+            }
+            
+            # 查询结果
+            resp = visual_service.cv_sync2async_get_result(form)
+            
+            if not resp or 'data' not in resp:
+                raise Exception(f"查询结果失败: {resp}")
+            
+            resp_data = resp['data']
+            
+            # 检查是否有错误
+            if 'error' in resp_data:
+                raise Exception(f"查询结果错误: {resp_data['error']}")
+            
+            # 检查任务状态
+            status = resp_data.get('status', '')
+            
+            if status == 'done' or status == 'DONE':
+                # 任务成功，返回结果数据
+                return resp_data
+            elif status == 'failed' or status == 'not_found' or status == 'expired':
+                # 任务失败
+                error_msg = resp_data.get('error', '任务执行失败')
+                raise Exception(f"任务执行失败: {error_msg} - {status}")
+            elif status == 'generating':
+                # 任务还在处理中，继续轮询
+                print(f"任务 {task_id} 处理中，等待 {poll_interval} 秒后重试...")
+                time.sleep(poll_interval)
+                continue
+            else:
+                # 未知状态，继续轮询
+                print(f"任务 {task_id} 状态: {status}，等待 {poll_interval} 秒后重试...")
+                time.sleep(poll_interval)
+                continue
+    
+    def _extract_image_from_result(self, resp_data, width, height, timeout):
+        """从结果中提取图像数据，支持一次返回多张图片"""
+        result_images = []
+        
+        # 优先检查 image_urls，然后是 binary_data_base64
+        if 'image_urls' in resp_data and resp_data['image_urls']:
+            # 处理所有图片URL
+            image_urls = resp_data['image_urls']
+            for idx, image_url in enumerate(image_urls):
+                try:
+                    response = requests.get(image_url, timeout=timeout)
+                    if response.status_code == 200:
+                        image_data = response.content
+                        # 创建图像
+                        result_image = Image.open(io.BytesIO(image_data))
+                        # 转换为 RGB 模式
+                        if result_image.mode != 'RGB':
+                            result_image = result_image.convert('RGB')
+                        # 转换为 ComfyUI 图像格式
+                        result_array = np.array(result_image).astype(np.float32) / 255.0
+                        result_images.append(result_array)
+                    else:
+                        print(f"警告：下载第 {idx + 1} 张图片失败: HTTP {response.status_code}")
+                except Exception as e:
+                    print(f"警告：处理第 {idx + 1} 张图片URL时出错: {str(e)}")
+                    
+        elif 'binary_data_base64' in resp_data and resp_data['binary_data_base64']:
+            # 处理所有base64数据
+            binary_data_list = resp_data['binary_data_base64']
+            for idx, binary_data_base64 in enumerate(binary_data_list):
+                try:
+                    image_data = base64.b64decode(binary_data_base64)
+                    # 创建图像
+                    result_image = Image.open(io.BytesIO(image_data))
+                    # 转换为 RGB 模式
+                    if result_image.mode != 'RGB':
+                        result_image = result_image.convert('RGB')
+                    # 转换为 ComfyUI 图像格式
+                    result_array = np.array(result_image).astype(np.float32) / 255.0
+                    result_images.append(result_array)
+                except Exception as e:
+                    print(f"警告：处理第 {idx + 1} 张base64图片时出错: {str(e)}")
+        else:
+            raise Exception("响应中未找到图像数据")
+        
+        if not result_images:
+            raise Exception("未能成功提取任何图片")
+        
+        return result_images
+    
+    def _async_generate_t2i(self, prompt, width, height, seed, num_images, req_key, api_key, secret_key, timeout, poll_interval):
+        """异步T2I生成"""
+        import concurrent.futures
+        import time
+        
+        all_images = []
+        
+        def generate_single_t2i(image_index):
+            try:
+                # 为每个线程创建独立的 VisualService 实例
+                thread_visual_service = self._setup_visual_service(api_key, secret_key, timeout)
+                
+                # 为每张图片生成不同的种子
+                current_seed = seed if seed != -1 else int(time.time() * 1000) + image_index
+                if current_seed > 99999999:
+                    current_seed = current_seed % 99999999
+                
+                # 构建提交任务的请求参数
+                form = {
+                    "req_key": req_key,
+                    "prompt": prompt,
+                    "seed": current_seed,
+                    "width": width,
+                    "height": height
+                }
+                
+                # 提交任务
+                print(f"提交第 {image_index + 1} 张图片的生成任务...")
+                task_id = self._submit_task(thread_visual_service, form)
+                print(f"任务已提交，task_id: {task_id}")
+                
+                # 轮询结果
+                print(f"开始轮询任务 {task_id} 的结果...")
+                resp_data = self._poll_result(thread_visual_service, req_key, task_id, timeout, poll_interval)
+                
+                # 提取图像（可能返回多张图片）
+                result_images = self._extract_image_from_result(resp_data, width, height, timeout)
+                print(f"第 {image_index + 1} 个任务生成成功，共 {len(result_images)} 张图片")
+                
+                return result_images
+                
+            except Exception as e:
+                print(f"生成第 {image_index + 1} 张图片失败: {str(e)}")
+                # 失败时返回 None，不返回错误图片
+                return None
+        
+        # 使用线程池并行执行
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(num_images, 4)) as executor:
+            future_to_index = {executor.submit(generate_single_t2i, i): i for i in range(num_images)}
+            
+            for future in concurrent.futures.as_completed(future_to_index):
+                result_images = future.result()
+                # 只添加成功的结果（非 None）
+                if result_images is not None:
+                    # result_images 是一个图片列表，将所有图片都添加进去
+                    all_images.extend(result_images)
+        
+        # 将所有图片合并为一个批次
+        if all_images:
+            # 确保所有图片都有相同的形状
+            first_image = all_images[0]
+            for i, img in enumerate(all_images):
+                if img.shape != first_image.shape:
+                    temp_img = Image.fromarray((img * 255).astype(np.uint8))
+                    temp_img = temp_img.resize((first_image.shape[1], first_image.shape[0]))
+                    all_images[i] = np.array(temp_img).astype(np.float32) / 255.0
+            
+            # 堆叠所有图片
+            batch_images = np.stack(all_images, axis=0)
+            
+            # 转换为 PyTorch 张量
+            image_tensor = torch.from_numpy(batch_images)
+            
+            # 构建信息字符串
+            info = f"异步T2I生成成功！共 {len(all_images)} 张图片，尺寸: {width}x{height}, 种子: {seed}, 模型: {req_key}"
+            
+            return (image_tensor, info)
+        else:
+            raise Exception("没有成功生成任何图片")
+    
+    def _async_generate_i2i(self, prompt, width, height, seed, num_images, input_image, scale, req_key, api_key, secret_key, timeout, poll_interval):
+        """异步I2I生成"""
+        import concurrent.futures
+        import time
+        
+        # 处理输入图像
+        pil_image = None
+        
+        if isinstance(input_image, str):
+            # 从URL下载图片
+            print(f"正在下载图片: {input_image}")
+            response = requests.get(input_image, timeout=timeout)
+            if response.status_code != 200:
+                raise Exception(f"下载图片失败: HTTP {response.status_code}")
+            pil_image = Image.open(io.BytesIO(response.content))
+        elif isinstance(input_image, torch.Tensor):
+            # 从ComfyUI图像转换
+            if len(input_image.shape) == 4:
+                input_image = input_image[0]
+            image_array = input_image.cpu().numpy()
+            image_array = (image_array * 255).astype(np.uint8)
+            pil_image = Image.fromarray(image_array)
+        else:
+            pil_image = input_image
+        
+        # 确保图像是 RGB 模式
+        if pil_image.mode != 'RGB':
+            pil_image = pil_image.convert('RGB')
+        
+        # 调整图像尺寸以匹配目标尺寸
+        if pil_image.size != (width, height):
+            pil_image = pil_image.resize((width, height), Image.Resampling.LANCZOS)
+            print(f"调整图像尺寸: {pil_image.size}")
+        
+        img_width, img_height = pil_image.size
+        
+        # 将图像转换为 base64（只转换一次，所有任务共享）
+        buffer = io.BytesIO()
+        pil_image.save(buffer, format='PNG')
+        image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        
+        print("图片准备完成，开始提交生成任务...")
+        
+        all_images = []
+        
+        def generate_single_i2i(image_index):
+            try:
+                # 为每个线程创建独立的 VisualService 实例
+                thread_visual_service = self._setup_visual_service(api_key, secret_key, timeout)
+                
+                # 为每张图片生成不同的种子
+                current_seed = seed if seed != -1 else int(time.time() * 1000) + image_index
+                if current_seed > 99999999:
+                    current_seed = current_seed % 99999999
+                
+                # 构建提交任务的请求参数
+                form = {
+                    "req_key": req_key,
+                    "prompt": prompt,
+                    "width": img_width,
+                    "height": img_height,
+                    "seed": current_seed,
+                    "scale": scale,
+                    "binary_data_base64": [image_base64]
+                }
+                
+                # 提交任务
+                print(f"提交第 {image_index + 1} 张图片的生成任务...")
+                task_id = self._submit_task(thread_visual_service, form)
+                print(f"任务已提交，task_id: {task_id}")
+                
+                # 轮询结果
+                print(f"开始轮询任务 {task_id} 的结果...")
+                resp_data = self._poll_result(thread_visual_service, req_key, task_id, timeout, poll_interval)
+                
+                # 提取图像（可能返回多张图片）
+                result_images = self._extract_image_from_result(resp_data, width, height, timeout)
+                print(f"第 {image_index + 1} 个任务生成成功，共 {len(result_images)} 张图片")
+                
+                return result_images
+                
+            except Exception as e:
+                print(f"生成第 {image_index + 1} 张图片失败: {str(e)}")
+                # 失败时返回 None，不返回错误图片
+                return None
+        
+        # 使用线程池并行执行
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(num_images, 4)) as executor:
+            future_to_index = {executor.submit(generate_single_i2i, i): i for i in range(num_images)}
+            
+            for future in concurrent.futures.as_completed(future_to_index):
+                image_array = future.result()
+                # 只添加成功的结果（非 None）
+                if image_array is not None:
+                    all_images.append(image_array)
+        
+        # 将所有图片合并为一个批次
+        if all_images:
+            # 确保所有图片都有相同的形状
+            first_image = all_images[0]
+            for i, img in enumerate(all_images):
+                if img.shape != first_image.shape:
+                    temp_img = Image.fromarray((img * 255).astype(np.uint8))
+                    temp_img = temp_img.resize((first_image.shape[1], first_image.shape[0]))
+                    all_images[i] = np.array(temp_img).astype(np.float32) / 255.0
+            
+            # 堆叠所有图片
+            batch_images = np.stack(all_images, axis=0)
+            
+            # 转换为 PyTorch 张量
+            result_tensor = torch.from_numpy(batch_images)
+            
+            # 构建信息字符串
+            info = f"异步I2I生成成功！共 {len(all_images)} 张图片，尺寸: {width}x{height}, 缩放: {scale}, 种子: {seed}, 模型: {req_key}"
+            
+            return (result_tensor, info)
+        else:
+            raise Exception("没有成功生成任何图片")
+
+
 # 节点注册
 NODE_CLASS_MAPPINGS = {
     "MaletteVolcanoT2IAPI": MaletteVolcanoT2IAPI,
     "MaletteVolcanoI2IAPI": MaletteVolcanoI2IAPI,
-    "MaletteVolcanoSmartAPI": MaletteVolcanoSmartAPI
+    "MaletteVolcanoSmartAPI": MaletteVolcanoSmartAPI,
+    "MaletteVolcanoAsyncSmartAPI": MaletteVolcanoAsyncSmartAPI
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "MaletteVolcanoT2IAPI": "火山引擎 T2I API",
     "MaletteVolcanoI2IAPI": "火山引擎 I2I API",
-    "MaletteVolcanoSmartAPI": "火山引擎 智能生成 API"
+    "MaletteVolcanoSmartAPI": "火山引擎 智能生成 API",
+    "MaletteVolcanoAsyncSmartAPI": "火山引擎 异步智能生成 API"
 }
