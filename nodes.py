@@ -846,47 +846,62 @@ class MaletteVolcanoAsyncSmartAPI:
         max_wait_time = timeout
         
         while True:
-            # 检查超时
-            elapsed_time = time.time() - start_time
-            if elapsed_time > max_wait_time:
-                raise Exception(f"轮询超时: 超过 {max_wait_time} 秒")
-            
-            # 构建查询请求
-            form = {
-                "req_key": req_key,
-                "task_id": task_id
-            }
-            
-            # 查询结果
-            resp = visual_service.cv_sync2async_get_result(form)
-            
-            if not resp or 'data' not in resp:
-                raise Exception(f"查询结果失败: {resp}")
-            
-            resp_data = resp['data']
-            
-            # 检查是否有错误
-            if 'error' in resp_data:
-                raise Exception(f"查询结果错误: {resp_data['error']}")
-            
-            # 检查任务状态
-            status = resp_data.get('status', '')
-            
-            if status == 'done' or status == 'DONE':
-                # 任务成功，返回结果数据
-                return resp_data
-            elif status == 'failed' or status == 'not_found' or status == 'expired':
-                # 任务失败
-                error_msg = resp_data.get('error', '任务执行失败')
-                raise Exception(f"任务执行失败: {error_msg} - {status}")
-            elif status == 'generating':
-                # 任务还在处理中，继续轮询
-                print(f"任务 {task_id} 处理中，等待 {poll_interval} 秒后重试...")
-                time.sleep(poll_interval)
-                continue
-            else:
-                # 未知状态，继续轮询
-                print(f"任务 {task_id} 状态: {status}，等待 {poll_interval} 秒后重试...")
+            try:
+                # 检查超时
+                elapsed_time = time.time() - start_time
+                if elapsed_time > max_wait_time:
+                    raise Exception(f"轮询超时: 超过 {max_wait_time} 秒")
+                
+                # 构建查询请求
+                form = {
+                    "req_key": req_key,
+                    "task_id": task_id
+                }
+                
+                # 查询结果
+                resp = visual_service.cv_sync2async_get_result(form)
+                
+                if not resp or 'data' not in resp:
+                    raise Exception(f"查询结果失败: {resp}")
+                
+                resp_data = resp['data']
+                
+                # 检查是否有错误
+                if 'error' in resp_data:
+                    raise Exception(f"查询结果错误: {resp_data['error']}")
+                
+                # 检查任务状态
+                status = resp_data.get('status', '')
+                
+                if status == 'done' or status == 'DONE':
+                    # 任务成功，返回结果数据
+                    return resp_data
+                elif status == 'failed' or status == 'not_found' or status == 'expired':
+                    # 任务失败
+                    error_msg = resp_data.get('error', '任务执行失败')
+                    raise Exception(f"任务执行失败: {error_msg} - {status}")
+                elif status == 'generating':
+                    # 任务还在处理中，继续轮询
+                    print(f"任务 {task_id} 处理中，等待 {poll_interval} 秒后重试...")
+                    time.sleep(poll_interval)
+                    continue
+                else:
+                    # 未知状态，继续轮询
+                    print(f"任务 {task_id} 状态: {status}，等待 {poll_interval} 秒后重试...")
+                    time.sleep(poll_interval)
+                    continue
+                    
+            except Exception as e:
+                # 检查是否超时
+                elapsed_time = time.time() - start_time
+                if elapsed_time > max_wait_time:
+                    error_msg = f"轮询超时: 超过 {max_wait_time} 秒，最后一次请求出错: {str(e)}"
+                    print(f"[Volcano] {error_msg}")
+                    raise Exception(error_msg)
+                
+                # 网络异常或其他错误，记录日志并继续重试
+                error_msg = f"轮询请求失败: {str(e)}"
+                print(f"[Volcano] {error_msg}，继续重试...")
                 time.sleep(poll_interval)
                 continue
     
