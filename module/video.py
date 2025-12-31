@@ -15,6 +15,15 @@ import numpy as np
 import torch
 import subprocess
 from pathlib import Path
+from io import BytesIO
+
+# 尝试导入 VideoFromFile，如果不可用则使用字符串 URL
+try:
+    from comfy_api.input_impl import VideoFromFile
+    VIDEO_FROM_FILE_AVAILABLE = True
+except ImportError:
+    VIDEO_FROM_FILE_AVAILABLE = False
+    print("[Volcano] VideoFromFile 不可用，将使用 URL 字符串返回视频")
 
 
 class ArkVideoGenerationNode:
@@ -47,22 +56,23 @@ class ArkVideoGenerationNode:
                 "camera_fixed": ("BOOLEAN", {"default": False}),
                 "return_last_frame": ("BOOLEAN", {"default": False}),
                 "service_tier": (["default", "flex"],),
-                "generate_audio": ("BOOLEAN", {"default": True}),
+                "generate_audio": ("BOOLEAN", {"default": False}),
                 "api_key": ("STRING", {"default": "", "placeholder": "方舟平台 API Key"}),
                 "timeout": ("INT", {"default": 300, "min": 60, "max": 1800, "step": 60}),
                 "poll_interval": ("INT", {"default": 5, "min": 2, "max": 30, "step": 1}),
+                "download_video": ("BOOLEAN", {"default": False}),
             }
         }
     
-    RETURN_TYPES = ("IMAGE", "STRING", "STRING")
-    RETURN_NAMES = ("image", "info", "video_url")
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING", "STRING" if not VIDEO_FROM_FILE_AVAILABLE else "VIDEO")
+    RETURN_NAMES = ("image", "info", "video_url", "video")
     FUNCTION = "generate_video"
     CATEGORY = "Volcano/Ark"
     
     def generate_video(self, model, prompt, duration, resolution, ratio, image_first=None, image_last=None,
                       image_url_first="", image_url_last="", seed=-1, fps=24, watermark=False,
                       camera_fixed=False, return_last_frame=False, service_tier="default",
-                      generate_audio=True, api_key="", timeout=300, poll_interval=5):
+                      generate_audio=False, api_key="", timeout=300, poll_interval=5, download_video=False):
         try:
             # 获取 API Key
             if not api_key or not api_key.strip():
@@ -201,13 +211,19 @@ class ArkVideoGenerationNode:
             print(f"视频生成成功！")
             print(f"视频 URL: {video_url}")
             
+            # 下载视频（如果需要）
+            video_object = None
+            if download_video and video_url:
+                video_object = self._download_video(video_url, timeout)
+            
             # 下载视频第一帧作为输出
             if video_url:
                 # 使用 ffmpeg 提取第一帧
                 frame_image = self._extract_frame_from_video(video_url, timeout)
                 if frame_image is not None:
                     info = f"[{mode_desc}] 视频生成完成 - {video_info}"
-                    return (frame_image, info, video_url)
+                    video_output = video_object if video_object else video_url
+                    return (frame_image, info, video_url, video_output)
             
             # 如果无法提取帧，返回黑色占位图
             placeholder = np.zeros((720, 1280, 3), dtype=np.float32)
@@ -216,7 +232,8 @@ class ArkVideoGenerationNode:
             placeholder_tensor = torch.from_numpy(placeholder)
             
             info = f"[{mode_desc}] 视频生成完成（无法提取预览） - {video_info}"
-            return (placeholder_tensor, info, video_url)
+            video_output = video_object if video_object else video_url
+            return (placeholder_tensor, info, video_url, video_output)
             
         except Exception as e:
             error_msg = f"视频生成失败: {str(e)}"
@@ -278,7 +295,8 @@ class ArkVideoGenerationNode:
                 
                 if status == 'succeeded':
                     # 任务成功
-                    video_url = result.get('video_url', '')
+                    content = result.get('content', {})
+                    video_url = content.get('video_url', '')
                     duration = result.get('duration', 'unknown')
                     ratio = result.get('ratio', 'unknown')
                     resolution = result.get('resolution', 'unknown')
@@ -364,6 +382,33 @@ class ArkVideoGenerationNode:
             print(f"提取视频帧失败: {str(e)}")
         
         return None
+    
+    def _download_video(self, video_url, timeout=300):
+        """下载视频文件到 BytesIO"""
+        try:
+            print(f"[Volcano] 开始下载视频: {video_url}")
+            response = requests.get(video_url, timeout=timeout, stream=True)
+            response.raise_for_status()
+            
+            video_data = BytesIO()
+            for chunk in response.iter_content(chunk_size=8192):
+                video_data.write(chunk)
+            
+            video_data.seek(0)
+            print(f"[Volcano] 视频下载完成，大小: {len(video_data.getvalue())} 字节")
+            
+            # 如果 VideoFromFile 可用，返回 VideoFromFile 对象
+            if VIDEO_FROM_FILE_AVAILABLE:
+                return VideoFromFile(video_data)
+            else:
+                # 否则返回 BytesIO 对象（但实际上会返回 URL）
+                print("[Volcano] VideoFromFile 不可用，返回 BytesIO")
+                return video_data
+            
+        except Exception as e:
+            error_msg = f"下载视频失败: {str(e)}"
+            print(f"[Volcano] {error_msg}")
+            return None
 
 
 class ArkVideoGenerationSmartNode:
@@ -380,6 +425,7 @@ class ArkVideoGenerationSmartNode:
                 "image_last": ("IMAGE",),
                 "image_url_first": ("STRING", {"default": "", "placeholder": "首帧图片URL"}),
                 "image_url_last": ("STRING", {"default": "", "placeholder": "尾帧图片URL"}),
+                "generate_audio": ("BOOLEAN", {"default": False}),
                 "duration": ("INT", {"default": 5, "min": 2, "max": 12}),
                 "resolution": (["480p", "720p", "1080p"],),
                 "ratio": (["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"],),
@@ -390,18 +436,19 @@ class ArkVideoGenerationSmartNode:
                 "api_key": ("STRING", {"default": "", "placeholder": "方舟平台 API Key"}),
                 "timeout": ("INT", {"default": 300, "min": 60, "max": 1800, "step": 60}),
                 "poll_interval": ("INT", {"default": 5, "min": 2, "max": 30, "step": 1}),
+                "download_video": ("BOOLEAN", {"default": False}),
             }
         }
     
-    RETURN_TYPES = ("IMAGE", "STRING", "STRING")
-    RETURN_NAMES = ("image", "info", "video_url")
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING", "STRING" if not VIDEO_FROM_FILE_AVAILABLE else "VIDEO")
+    RETURN_NAMES = ("image", "info", "video_url", "video")
     FUNCTION = "smart_generate"
     CATEGORY = "Volcano/Ark"
     
     def smart_generate(self, prompt, image_first=None, image_last=None, image_url_first="", 
-                      image_url_last="", duration=5, resolution="720p", ratio="16:9",
+                      image_url_last="", generate_audio=False, duration=5, resolution="720p", ratio="16:9",
                       seed=-1, watermark=False, return_last_frame=False, service_tier="default",
-                      api_key="", timeout=300, poll_interval=5):
+                      api_key="", timeout=300, poll_interval=5, download_video=False):
         try:
             # 智能判断生成模式
             has_first_frame = (image_first is not None) or (image_url_first and image_url_first.strip())
@@ -439,17 +486,18 @@ class ArkVideoGenerationSmartNode:
                 camera_fixed=False,
                 return_last_frame=return_last_frame,
                 service_tier=service_tier,
-                generate_audio=True,
+                generate_audio=generate_audio,
                 api_key=api_key,
                 timeout=timeout,
-                poll_interval=poll_interval
+                poll_interval=poll_interval,
+                download_video=download_video
             )
             
             # 在信息中添加模式标识
-            image, info, video_url = result
+            image, info, video_url, video = result
             info = f"[智能-{mode_desc}] {info}"
             
-            return (image, info, video_url)
+            return (image, info, video_url, video)
             
         except Exception as e:
             error_msg = f"智能视频生成失败: {str(e)}"
