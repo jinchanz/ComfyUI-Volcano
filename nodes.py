@@ -9,6 +9,10 @@ from PIL import Image
 import numpy as np
 import torch
 
+# 导入方舟平台节点
+from .module.image import ArkImageGenerationNode, ArkImageGenerationSmartNode
+from .module.video import ArkVideoGenerationNode, ArkVideoGenerationSmartNode
+
 
 def create_visual_service_with_timeout(timeout=120):
     """创建带超时设置的VisualService实例"""
@@ -1160,12 +1164,24 @@ NODE_CLASS_MAPPINGS = {
     "MaletteVolcanoT2IAPI": MaletteVolcanoT2IAPI,
     "MaletteVolcanoI2IAPI": MaletteVolcanoI2IAPI,
     "MaletteVolcanoSmartAPI": MaletteVolcanoSmartAPI,
-    "MaletteVolcanoAsyncSmartAPI": MaletteVolcanoAsyncSmartAPI
+    "MaletteVolcanoAsyncSmartAPI": MaletteVolcanoAsyncSmartAPI,
+    # 方舟平台图片节点
+    "ArkImageGenerationNode": ArkImageGenerationNode,
+    "ArkImageGenerationSmartNode": ArkImageGenerationSmartNode,
+    # 方舟平台视频节点
+    "ArkVideoGenerationNode": ArkVideoGenerationNode,
+    "ArkVideoGenerationSmartNode": ArkVideoGenerationSmartNode,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "MaletteVolcanoT2IAPI": "火山引擎 T2I API",
     "MaletteVolcanoI2IAPI": "火山引擎 I2I API",
     "MaletteVolcanoSmartAPI": "火山引擎 智能生成 API",
-    "MaletteVolcanoAsyncSmartAPI": "火山引擎 异步智能生成 API"
+    "MaletteVolcanoAsyncSmartAPI": "火山引擎 异步智能生成 API",
+    # 方舟平台图片节点
+    "ArkImageGenerationNode": "方舟图片生成 (Ark Image Generation)",
+    "ArkImageGenerationSmartNode": "方舟智能图片生成 (Ark Smart Generation)",
+    # 方舟平台视频节点
+    "ArkVideoGenerationNode": "方舟视频生成 (Ark Video Generation)",
+    "ArkVideoGenerationSmartNode": "方舟智能视频生成 (Ark Smart Video)",
 }
