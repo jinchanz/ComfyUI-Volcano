@@ -50,7 +50,7 @@ class ArkVideoGenerationNode:
                 "image_last": ("IMAGE",),
                 "image_url_first": ("STRING", {"default": "", "placeholder": "首帧图片URL"}),
                 "image_url_last": ("STRING", {"default": "", "placeholder": "尾帧图片URL"}),
-                "seed": ("INT", {"default": -1, "min": -1, "max": 4294967295}),
+                "seed": ("INT", {"default": -1, "min": -1, "max": 0xffffffffffffffff}),
                 "fps": ("INT", {"default": 24, "min": 24, "max": 24}),
                 "watermark": ("BOOLEAN", {"default": False}),
                 "camera_fixed": ("BOOLEAN", {"default": False}),
@@ -74,6 +74,8 @@ class ArkVideoGenerationNode:
                       camera_fixed=False, return_last_frame=False, service_tier="default",
                       generate_audio=False, api_key="", timeout=300, poll_interval=5, download_video=False):
         try:
+            if seed > 4294967295:
+                seed = seed % 4294967296
             # 获取 API Key
             if not api_key or not api_key.strip():
                 api_key = os.getenv('ARK_API_KEY')
@@ -429,7 +431,7 @@ class ArkVideoGenerationSmartNode:
                 "duration": ("INT", {"default": 5, "min": 2, "max": 12}),
                 "resolution": (["480p", "720p", "1080p"],),
                 "ratio": (["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"],),
-                "seed": ("INT", {"default": -1, "min": -1, "max": 4294967295}),
+                "seed": ("INT", {"default": -1, "min": -1, "max": 0xffffffffffffffff}),
                 "watermark": ("BOOLEAN", {"default": False}),
                 "return_last_frame": ("BOOLEAN", {"default": False}),
                 "service_tier": (["default", "flex"],),
@@ -450,6 +452,8 @@ class ArkVideoGenerationSmartNode:
                       seed=-1, watermark=False, return_last_frame=False, service_tier="default",
                       api_key="", timeout=300, poll_interval=5, download_video=False):
         try:
+            if seed > 4294967295:
+                seed = seed % 4294967296
             # 智能判断生成模式
             has_first_frame = (image_first is not None) or (image_url_first and image_url_first.strip())
             has_last_frame = (image_last is not None) or (image_url_last and image_url_last.strip())
