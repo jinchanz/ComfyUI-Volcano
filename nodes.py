@@ -11,7 +11,7 @@ import torch
 
 # 导入方舟平台节点
 from .module.image import ArkImageGenerationNode, ArkImageGenerationSmartNode
-from .module.video import ArkVideoGenerationNode, ArkVideoGenerationSmartNode
+from .module.video import ArkVideoGenerationNode, ArkVideoGenerationSmartNode, ArkVideoGenerationV2Node
 
 
 def create_visual_service_with_timeout(timeout=120):
@@ -1171,6 +1171,7 @@ NODE_CLASS_MAPPINGS = {
     # 方舟平台视频节点
     "ArkVideoGenerationNode": ArkVideoGenerationNode,
     "ArkVideoGenerationSmartNode": ArkVideoGenerationSmartNode,
+    "ArkVideoGenerationV2Node": ArkVideoGenerationV2Node,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1184,4 +1185,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     # 方舟平台视频节点
     "ArkVideoGenerationNode": "方舟视频生成 (Ark Video Generation)",
     "ArkVideoGenerationSmartNode": "方舟智能视频生成 (Ark Smart Video)",
+    "ArkVideoGenerationV2Node": "方舟视频生成 V2 (Ark Video V2)",
 }

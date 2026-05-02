@@ -28,7 +28,7 @@ class ArkImageGenerationNode:
             "optional": {
                 "image": ("IMAGE",),  # 可选的输入图片
                 "image_url": ("STRING", {"default": "", "placeholder": "图片URL（用于图生图）"}),
-                "seed": ("INT", {"default": -1, "min": -1, "max": 2147483647}),
+                "seed": ("INT", {"default": -1, "min": -1, "max": 2**31 - 1}),
                 "guidance_scale": ("FLOAT", {"default": 2.5, "min": 1.0, "max": 10.0, "step": 0.1}),
                 "response_format": (["url", "b64_json"],),
                 "watermark": ("BOOLEAN", {"default": False}),
@@ -50,6 +50,9 @@ class ArkImageGenerationNode:
                       sequential_image_generation="disabled", max_images=15, stream=False,
                       api_key="", timeout=120):
         try:
+            if seed > 2147483647:
+                # random
+                seed = seed % 2147483648
             # 获取 API Key
             if not api_key or not api_key.strip():
                 api_key = os.getenv('ARK_API_KEY')
